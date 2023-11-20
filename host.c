@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // registers
+    // general registers
     struct kvm_regs regs;
     // special registers
     struct kvm_sregs sregs;
@@ -122,5 +122,48 @@ int main(int argc, char *argv[])
     sregs.cs.base = CODE_START * 16;
     sregs.ss.selector = CODE_START; // stack segment
     sregs.ss.base = CODE_START * 16;
-    sregs.ds.selector =
+    sregs.ds.selector = CODE_START; // data segment
+    sregs.ds.base = CODE_START * 16;
+    sregs.es.selector = CODE_START;
+    sregs.es.base = CODE_START * 16;
+    sregs.fs.selector = CODE_START; // frame segment
+    sregs.fs.base = CODE_START * 16;
+    sregs.gs.selector = CODE_START;
+
+    if (ioctl(vcpu_fd, KVM_SET_SREGS, &sregs) < 0) {
+        perror("can not set sregs");
+        return 1;
+    }
+
+    // general register
+    regs.rflags = 2;
+    regs.rip = 0;
+
+    if (ioctl(vcpu_fd, KVM_SET_REGS, &(regs)) < 0) {
+        perror("KVM SET REGS\n");
+        return 1;
+    }
+
+    for (;;) {
+        int ret = ioctl(vcpu_fd, KVM_RUN, 0);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_RUN failed\n");
+            return 1;
+        }
+
+        switch (run->exit_reason) {
+        case KVM_EXIT_IO:
+            printf("IO port: %x, data: %x\n",
+                   run->io.port,
+                   *(int *) ((char *) (run) + run->io.data_offset));
+            sleep(1);
+            break;
+        // normal exit
+        case KVM_EXIT_SHUTDOWN:
+            goto exit;
+        }
+    }
+exit:
+    close(kvm_fd);
+    return 0;
 }
